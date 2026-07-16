@@ -15,7 +15,7 @@
 > **Copyright © 2026 Erdinç Örsan ÜNAL.**  
 > The **Jeomatik** name, logo and associated trademarks remain the property of the author and are **not licensed under the GPL**.
 
-**Version:** `1.4.1`  
+**Version:** `1.4.2`  
 **Tested with:** `QGIS 3.22 LTR` and `QGIS 4.0`  
 **License:** `GPL-2.0-or-later`
 
@@ -120,9 +120,9 @@ The plugin automatically selects the best available parser backend for the curre
 
 1. Pure Python parser
 2. Native Python extension (when available)
-3. Native CLI helper (when available)
 
-This architecture provides maximum compatibility across different QGIS versions and operating systems.
+The external native CLI fallback was removed to comply with QGIS plugin security requirements.
+This architecture provides compatibility across supported QGIS versions and operating systems without executing external subprocesses.
 
 ---
 
