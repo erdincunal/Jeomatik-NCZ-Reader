@@ -15,7 +15,7 @@
 > **Copyright © 2026 Erdinç Örsan ÜNAL.**  
 > The **Jeomatik** name, logo and associated trademarks remain the property of the author and are **not licensed under the GPL**.
 
-**Version:** `1.4.0`  
+**Version:** `1.4.1`  
 **Tested with:** `QGIS 3.22 LTR` and `QGIS 4.0`  
 **License:** `GPL-2.0-or-later`
 
@@ -182,8 +182,8 @@ https://jeomatik.com/ncz-reader.html
 ## Links
 
 - **Homepage:** https://jeomatik.com/ncz-reader.html
-- **Source Repository:** https://github.com/jeomatik/Jeomatik-NCZ-Reader
-- **Issue Tracker:** https://github.com/jeomatik/Jeomatik-NCZ-Reader/issues
+- **Source Repository:** https://github.com/erdincunal/Jeomatik-NCZ-Reader
+- **Issue Tracker:** https://github.com/erdincunal/Jeomatik-NCZ-Reader/issues
 
 ---
 
