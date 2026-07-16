@@ -5,20 +5,24 @@ qgisMaximumVersion=4.99
 
 description=Imports NetCAD NCZ drawing files into QGIS and converts supported entities into editable vector layers.
 
-version=1.4.1
+version=1.4.2
 author=Erdinç Örsan ÜNAL
 email=erdincunal@hotmail.com
 
 about=Imports NetCAD NCZ drawing files directly into QGIS and converts supported entities into editable point, line, and polygon memory layers while preserving geometry and attributes. Designed for geomatics, surveying, engineering, and GIS professionals working with legacy or project-based NetCAD data.
 
 changelog=
-    1.4.1
+    1.4.2
     - Initial public release
     - Added MapSheet parsing
     - Added SmartObject parsing for NCZ type 11 and type 15 objects
     - Corrected SmartObject width/height orientation
     - Filtered internal SmartObject grid symbols from standalone point layers
-	- Logo changed
+    - Logo changed
+    - Removed the external native CLI parser fallback
+    - Eliminated subprocess execution for QGIS security compliance
+    - Retained Pure Python and native Python parser backends
+    - Updated plugin package after security review
 
 category=Vector
 
