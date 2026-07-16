@@ -26,8 +26,8 @@ tags=Jeomatik,NetCAD,NCZ,QGIS,GIS,CAD,Survey,Geomatics,Mapping,Import
 icon=icon.png
 
 homepage=https://jeomatik.com/ncz-reader.html
-repository=https://github.com/jeomatik/Jeomatik-NCZ-Reader
-tracker=https://github.com/jeomatik/Jeomatik-NCZ-Reader/issues
+repository=https://github.com/erdincunal/Jeomatik-NCZ-Reader
+tracker=https://github.com/erdincunal/Jeomatik-NCZ-Reader/issues
 
 license=GPL-2.0-or-later
 
