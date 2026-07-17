@@ -75,11 +75,15 @@ class NCZReaderPlugin:
         self.menu_name = "Jeomatik"
 
     def initGui(self):
-        icon_path = os.path.join(self.plugin_dir, "icon.svg")
-        self.action = QAction(QIcon(icon_path), "Jeomatik NCZ Reader", self.iface.mainWindow())
+        icon_path = os.path.join(self.plugin_dir, "icon.png")
+        self.action = QAction(
+            QIcon(icon_path),
+            "Jeomatik NCZ Reader",
+            self.iface.mainWindow(),
+        )
         self.action.setObjectName("JeomatikNCZReader")
         self.action.setToolTip("Jeomatik NCZ Reader")
-        self.action.setStatusTip("Open NetCAD NCZ files with Jeomatik NCZ Reader")
+        self.action.setStatusTip("NetCAD NCZ dosyalarını QGIS'e aktar")
         self.action.triggered.connect(self.run)
         self.iface.addPluginToMenu(f"&{self.menu_name}", self.action)
         self.iface.addToolBarIcon(self.action)
@@ -105,16 +109,25 @@ class NCZReaderPlugin:
             layer_groups = self._build_layers(file_path, result)
             self._add_layer_groups_to_project(layer_groups)
 
-            message = f"{len(result.entities)} obje ice aktarildi | parser: {result.parser_backend}"
+            message = (
+                f"{len(result.entities)} nesne içe aktarıldı"
+                f" | ayrıştırıcı: {result.parser_backend}"
+            )
             if result.attribute_tables:
-                attribute_row_count = sum(len(table.rows) for table in result.attribute_tables)
-                message += f" | attribute tablolar: {len(result.attribute_tables)} tablo, {attribute_row_count} satir"
+                attribute_row_count = sum(
+                    len(table.rows)
+                    for table in result.attribute_tables
+                )
+                message += (
+                    f" | öznitelikler: {len(result.attribute_tables)} tablo,"
+                    f" {attribute_row_count} satır"
+                )
             if result.unsupported_geometry_types:
                 unsupported = ", ".join(
                     f"{code}:{count}"
                     for code, count in sorted(result.unsupported_geometry_types.items())
                 )
-                message += f" | desteklenmeyen tipler {unsupported}"
+                message += f" | desteklenmeyen türler: {unsupported}"
 
             self.iface.messageBar().pushSuccess("NCZ Reader", message)
         except Exception as exc:
@@ -126,7 +139,7 @@ class NCZReaderPlugin:
 
     def _build_layers(self, file_path, result):
         if not result.entities and not result.attribute_tables:
-            raise ValueError("NCZ icinde okunabilir geometri bulunamadi.")
+            raise ValueError("NCZ içinde okunabilir geometri veya öznitelik bulunamadı.")
 
         base_name = self._sanitize_name(os.path.splitext(os.path.basename(file_path))[0])
         source_file_name = os.path.splitext(os.path.basename(file_path))[0]
@@ -185,15 +198,20 @@ class NCZReaderPlugin:
         project = QgsProject.instance()
         root = project.layerTreeRoot()
         for item in layer_groups:
-            existing_group = root.findGroup(item.name)
-            if existing_group is not None:
-                parent = existing_group.parent() or root
-                parent.removeChildNode(existing_group)
-
-            group = root.addGroup(item.name)
+            group = root.addGroup(self._unique_group_name(root, item.name))
             for layer in item.layers:
                 project.addMapLayer(layer, False)
                 group.addLayer(layer)
+
+    def _unique_group_name(self, root, base_name):
+        """Return a group name without replacing an earlier NCZ import."""
+        if root.findGroup(base_name) is None:
+            return base_name
+
+        suffix = 2
+        while root.findGroup(f"{base_name}_{suffix}") is not None:
+            suffix += 1
+        return f"{base_name}_{suffix}"
 
     def _geometry_family(self, geometry_kind):
         if geometry_kind in ("Point", "Text", "Symbol", "Block"):
@@ -288,7 +306,10 @@ class NCZReaderPlugin:
                 else:
                     column_types.setdefault(key, QVariant.String)
 
-        ordered_dynamic_names = sorted(name for name in field_names if name not in {"source_file", "table_ref", "row_index"})
+        fixed_field_names = {"source_file", "table_ref", "row_index"}
+        ordered_dynamic_names = sorted(
+            name for name in field_names if name not in fixed_field_names
+        )
         fields = [
             QgsField("source_file", QVariant.String),
             QgsField("table_ref", QVariant.String),

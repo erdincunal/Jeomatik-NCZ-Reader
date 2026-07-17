@@ -8,14 +8,14 @@
 
 ![QGIS](https://img.shields.io/badge/QGIS-3.22%2B%20%7C%204.0-green)
 ![License](https://img.shields.io/badge/License-GPL--2.0--or--later-blue)
-![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS-lightgrey)
+![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
 
 **Jeomatik NCZ Reader** imports NetCAD NCZ binary drawing files directly into QGIS and converts supported entities into editable QGIS vector layers while preserving geometry and attributes.
 
 > **Copyright © 2026 Erdinç Örsan ÜNAL.**  
 > The **Jeomatik** name, logo and associated trademarks remain the property of the author and are **not licensed under the GPL**.
 
-**Version:** `1.4.2`  
+**Version:** `1.4.3`  
 **Tested with:** `QGIS 3.22 LTR` and `QGIS 4.0`  
 **License:** `GPL-2.0-or-later`
 
@@ -29,12 +29,15 @@
 - Create editable QGIS vector layers (Point, Line and Polygon)
 - Preserve supported geometry and attributes
 - Organize imported features into grouped layer structures
-- Support Point, Line, Polygon, Text, Arc, Circle and SmartObject entities
-- Automatically select the best available parser backend
+- Support Point, Line, Polyline, Text, Symbol, Arc, Circle, Box, MapSheet,
+  Triangle, Block and SmartObject entities
+- Parse NCZ data with a platform-independent Pure Python backend
+- Read supported NCZ attribute-table records into non-spatial QGIS layers
 - Automatic layer naming with collision handling
+- Preserve previous imports by creating unique group names
 - Use the current QGIS project CRS for created layers
 - Tested with QGIS 3.22 LTR and QGIS 4.0
-- Cross-platform support for Windows and macOS
+- Cross-platform support for Windows, macOS and Linux
 
 ---
 
@@ -85,6 +88,10 @@ If duplicate layer names occur after sanitization, unique names are generated au
 | Polygon | Polygon layer |
 | Circle | Polygon layer |
 | Box | Polygon layer |
+| MapSheet | Polygon layer |
+| Triangle | Polygon layer |
+| SmartObject | Polygon layer |
+| Block | Point layer |
 
 Additional handling:
 
@@ -111,18 +118,20 @@ Every generated layer contains the following attributes:
 - `end_ang`
 - `text_h`
 - `rotation`
+- `box_width`
+- `box_height`
+- `scale`
+- `grid_x`
+- `grid_y`
 
 ---
 
 ## Parser Strategy
 
-The plugin automatically selects the best available parser backend for the current platform.
-
-1. Pure Python parser
-2. Native Python extension (when available)
-
-The external native CLI fallback was removed to comply with QGIS plugin security requirements.
-This architecture provides compatibility across supported QGIS versions and operating systems without executing external subprocesses.
+Version 1.4.3 uses a modular Pure Python parser on every supported platform.
+The release package contains no native extension, DLL or external executable and
+does not launch subprocesses. Block reads are bounded to the current NCZ record,
+so truncated or malformed data is skipped safely where possible.
 
 ---
 
@@ -133,7 +142,7 @@ This architecture provides compatibility across supported QGIS versions and oper
 1. Open QGIS.
 2. Go to **Plugins → Manage and Install Plugins...**
 3. Select the **Install from ZIP** tab.
-4. Choose **Jeomatik-NCZ-Reader.zip**.
+4. Choose **NCZReader-1.4.3.zip**.
 5. Install and enable the plugin.
 
 ### Manual Installation
@@ -151,23 +160,8 @@ This architecture provides compatibility across supported QGIS versions and oper
 3. Wait for the import to complete.
 4. Review the generated layers in the QGIS Layer Panel.
 
-After a successful import, the plugin reports the parser backend used. Unsupported geometry types, if encountered, are displayed in the QGIS message bar.
-
----
-
-## Screenshots
-
-### Toolbar
-
-![Toolbar](screenshots/toolbar.png)
-
-### Import Dialog
-
-![Import](screenshots/import.png)
-
-### Imported Layers
-
-![Layers](screenshots/layers.png)
+After a successful import, the plugin reports the parser backend used. Unsupported
+geometry types, if encountered, are displayed in the QGIS message bar.
 
 ---
 

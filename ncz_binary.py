@@ -14,21 +14,12 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
-import json
-import os
-import subprocess
 from typing import Optional
 
-from .ncz_pure import parse_ncz as parse_ncz_pure
-
-try:
-    from . import _ncz_native
-except ImportError as exc:
-    _ncz_native = None
-    _IMPORT_ERROR = exc
-else:
-    _IMPORT_ERROR = None
+from .ncz_pure import parse_ncz
 
 
 @dataclass
@@ -90,57 +81,32 @@ class NCZBinaryReader:
         self.file_path = file_path
 
     def parse(self):
-        payload = parse_ncz_pure(self.file_path)
-        backend = "pure-python"
-
-        if payload is None:
-            payload = self._parse_with_native_module()
-            if payload is not None:
-                backend = "native-module"
-
-        if payload is None:
-            payload = self._parse_with_cli()
-            if payload is not None:
-                backend = "native-cli"
+        payload = parse_ncz(self.file_path)
+        if not isinstance(payload, dict):
+            raise ValueError("NCZ ayrıştırıcısı geçerli bir sonuç üretemedi.")
 
         return NCZParseResult(
-            entities=[self._entity_from_dict(item) for item in payload["entities"]],
-            attribute_tables=[self._attribute_table_from_dict(item) for item in payload.get("attribute_tables", [])],
+            entities=[
+                self._entity_from_dict(item)
+                for item in payload["entities"]
+            ],
+            attribute_tables=[
+                self._attribute_table_from_dict(item)
+                for item in payload.get("attribute_tables", [])
+            ],
             layer_names=list(payload["layer_names"]),
             layer_colors=list(payload["layer_colors"]),
-            parser_backend=backend,
+            parser_backend="pure-python",
             version_name=payload.get("version_name", ""),
             epsg=payload.get("epsg", ""),
             projection_text=payload.get("projection_text", ""),
             unsupported_geometry_types={
                 int(key): value
-                for key, value in dict(payload.get("unsupported_geometry_types", {})).items()
+                for key, value in dict(
+                    payload.get("unsupported_geometry_types", {})
+                ).items()
             },
         )
-
-    def _parse_with_native_module(self):
-        if _ncz_native is None:
-            return None
-        return _ncz_native.parse(self.file_path)
-
-    def _parse_with_cli(self):
-        cli_path = os.path.join(os.path.dirname(__file__), "ncz_native_cli")
-        if not os.path.exists(cli_path):
-            return None
-
-        try:
-            completed = subprocess.run(
-                [cli_path, self.file_path],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-        except subprocess.CalledProcessError as exc:
-            return None
-        except OSError:
-            return None
-
-        return json.loads(completed.stdout)
 
     def _entity_from_dict(self, payload):
         return NCZEntity(
