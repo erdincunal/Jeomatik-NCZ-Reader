@@ -142,7 +142,7 @@ so truncated or malformed data is skipped safely where possible.
 1. Open QGIS.
 2. Go to **Plugins → Manage and Install Plugins...**
 3. Select the **Install from ZIP** tab.
-4. Choose **NCZReader-1.4.3.zip**.
+4. Choose **Jeomatik-NCZ-Reader.zip**.
 5. Install and enable the plugin.
 
 ### Manual Installation
