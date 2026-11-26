@@ -15,6 +15,7 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 import math
+import re
 import struct
 
 
@@ -1004,16 +1005,19 @@ class _NCZParser:
         return 48 <= value <= 57 or 65 <= value <= 90 or 97 <= value <= 122 or (value in (45, 95))
 
     def _read_epsg(self, offset, max_length):
-        for index in range(max_length - 3):
-            if offset + index + 2 >= len(self.data):
-                break
+        block_end = min(len(self.data), offset + max_length)
+        chunk = self.data[offset:block_end]
+        match = re.search(rb"EPSG\s*:\s*(\d+)", chunk, re.IGNORECASE)
+        if match:
+            return f"EPSG:{match.group(1).decode('ascii')}"
+        for index in range(max(0, block_end - offset - 3)):
             if self.data[offset + index:offset + index + 3] == b'SRS':
                 chars = []
                 cursor = 0
-                while offset + index + cursor < len(self.data) and self.data[offset + index + cursor] != 62:
+                while offset + index + cursor < block_end and self.data[offset + index + cursor] != 62:
                     chars.append(self._decode_legacy_char(self.data[offset + index + cursor]))
                     cursor += 1
-                return ''.join(chars).replace('SRS:', '').replace('"', '')
+                return ''.join(chars).replace('SRS:', '').replace('"', '').strip()
         return ''
 
     def _box_metrics(self, coordinates):

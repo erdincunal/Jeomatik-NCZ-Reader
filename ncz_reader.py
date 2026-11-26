@@ -18,20 +18,169 @@ import math
 import os
 import re
 from dataclasses import dataclass, field
+from urllib.parse import quote
 
-from qgis.PyQt.QtCore import QVariant
+from qgis.PyQt.QtCore import QSettings, QVariant
 from qgis.PyQt.QtGui import QIcon
-from qgis.PyQt.QtWidgets import QAction, QFileDialog, QMessageBox
+from qgis.PyQt.QtWidgets import (
+    QAction,
+    QDialog,
+    QDialogButtonBox,
+    QFileDialog,
+    QFormLayout,
+    QLabel,
+    QMessageBox,
+    QVBoxLayout,
+)
 from qgis.core import (
+    QgsCoordinateReferenceSystem,
+    QgsCoordinateTransform,
     QgsFeature,
     QgsField,
     QgsGeometry,
     QgsPointXY,
     QgsProject,
+    QgsRectangle,
     QgsVectorLayer,
 )
+from qgis.gui import QgsProjectionSelectionWidget
 
 from .ncz_binary import NCZBinaryReader
+from .ncz_crs import (
+    compute_entity_bounds,
+    detect_ncz_crs,
+    format_crs_label,
+)
+
+_DIALOG_ACCEPTED = getattr(QDialog, "DialogCode", QDialog).Accepted
+_STANDARD_BUTTON = getattr(QDialogButtonBox, "StandardButton", QDialogButtonBox)
+
+
+class NCZCoordinateSystemDialog(QDialog):
+    """Dialog prompting the user to confirm or select the CRS for an NCZ import."""
+
+    def __init__(
+        self,
+        file_path,
+        detected_crs,
+        initial_crs,
+        initial_source_label,
+        resolved_detected_epsg="",
+        bounds=None,
+        parent=None,
+    ):
+        super().__init__(parent)
+        self.setWindowTitle("Koordinat Sistemi Seçimi - Jeomatik NCZ Reader")
+        self.setMinimumWidth(480)
+
+        layout = QVBoxLayout(self)
+
+        intro_label = QLabel(
+            "İçe aktarılacak NCZ katmanları için kaynak koordinat sistemini (CRS) seçin.\n"
+            "Mevcut QGIS proje koordinat sistemi değiştirilmez."
+        )
+        intro_label.setWordWrap(True)
+        layout.addWidget(intro_label)
+
+        form = QFormLayout()
+
+        file_label = QLabel(os.path.basename(file_path))
+        file_label.setWordWrap(True)
+        form.addRow("Dosya:", file_label)
+
+        detected_summary = self._build_detected_summary(
+            detected_crs,
+            resolved_detected_epsg,
+        )
+        detected_label = QLabel(detected_summary)
+        detected_label.setWordWrap(True)
+        form.addRow("NCZ Projeksiyonu:", detected_label)
+
+        if bounds is not None:
+            min_x, min_y, max_x, max_y = bounds
+            bounds_label = QLabel(
+                f"X: [{min_x:,.3f} .. {max_x:,.3f}]   Y: [{min_y:,.3f} .. {max_y:,.3f}]"
+            )
+            bounds_label.setWordWrap(True)
+            form.addRow("Koordinat Aralığı:", bounds_label)
+
+        self.crs_widget = QgsProjectionSelectionWidget(self)
+        crs_option = getattr(
+            QgsProjectionSelectionWidget,
+            "CrsOption",
+            QgsProjectionSelectionWidget,
+        )
+        for option_name in ("ProjectCrs", "CurrentCrs", "RecentCrs"):
+            option = getattr(crs_option, option_name, None)
+            if option is not None:
+                self.crs_widget.setOptionVisible(option, True)
+        if initial_crs is not None and initial_crs.isValid():
+            self.crs_widget.setCrs(initial_crs)
+        form.addRow("Koordinat Sistemi:", self.crs_widget)
+
+        if initial_source_label:
+            source_label = QLabel(initial_source_label)
+            source_label.setWordWrap(True)
+            form.addRow("Ön Seçim Kaynağı:", source_label)
+
+        layout.addLayout(form)
+
+        self.status_label = QLabel("")
+        self.status_label.setWordWrap(True)
+        layout.addWidget(self.status_label)
+
+        self.button_box = QDialogButtonBox(
+            _STANDARD_BUTTON.Ok | _STANDARD_BUTTON.Cancel,
+            self,
+        )
+        self.ok_button = self.button_box.button(_STANDARD_BUTTON.Ok)
+        cancel_button = self.button_box.button(_STANDARD_BUTTON.Cancel)
+        if self.ok_button is not None:
+            self.ok_button.setText("İçe Aktar")
+        if cancel_button is not None:
+            cancel_button.setText("İptal")
+        self.button_box.accepted.connect(self.accept)
+        self.button_box.rejected.connect(self.reject)
+        layout.addWidget(self.button_box)
+
+        self.crs_widget.crsChanged.connect(self._on_crs_changed)
+        self._on_crs_changed(self.crs_widget.crs())
+
+    def _build_detected_summary(self, detected_crs, resolved_detected_epsg):
+        parts = []
+        if detected_crs.projection_text:
+            parts.append(detected_crs.projection_text)
+        if resolved_detected_epsg:
+            crs_obj = QgsCoordinateReferenceSystem(resolved_detected_epsg)
+            if crs_obj.isValid():
+                parts.append(
+                    f"Önerilen: {format_crs_label(crs_obj.authid(), crs_obj.description())}"
+                )
+            else:
+                parts.append(f"Önerilen: {resolved_detected_epsg}")
+        elif detected_crs.tiled_epsg and detected_crs.tiled_epsg != resolved_detected_epsg:
+            parts.append(f"TILED_XML: {detected_crs.tiled_epsg} (geçerli CRS bulunamadı)")
+
+        if parts:
+            if not resolved_detected_epsg and detected_crs.projection_text:
+                parts.append("(otomatik EPSG eşleştirilemedi)")
+            return " | ".join(parts)
+        return "Dosyada projeksiyon bilgisi bulunamadı"
+
+    def _on_crs_changed(self, crs):
+        is_valid = crs is not None and crs.isValid()
+        if self.ok_button is not None:
+            self.ok_button.setEnabled(is_valid)
+        if is_valid:
+            label = format_crs_label(crs.authid(), crs.description())
+            self.status_label.setStyleSheet("")
+            self.status_label.setText(f"Seçili CRS: {label}")
+        else:
+            self.status_label.setStyleSheet("color: #b00020;")
+            self.status_label.setText("Lütfen geçerli bir koordinat sistemi (CRS) seçin.")
+
+    def selected_crs(self):
+        return self.crs_widget.crs()
 
 
 @dataclass
@@ -48,6 +197,8 @@ class LayerGroup:
 
 
 class NCZReaderPlugin:
+    SETTINGS_LAST_CRS_KEY = "JeomatikNCZReader/last_crs"
+
     FIELD_DEFINITIONS = [
         QgsField("source_file", QVariant.String),
         QgsField("layer_code", QVariant.Int),
@@ -106,13 +257,33 @@ class NCZReaderPlugin:
 
         try:
             result = NCZBinaryReader(file_path).parse()
-            layer_groups = self._build_layers(file_path, result)
+            if not result.entities and not result.attribute_tables:
+                raise ValueError(
+                    "NCZ içinde okunabilir geometri veya öznitelik bulunamadı."
+                )
+
+            selected_crs = None
+            if result.entities:
+                selected_crs = self._prompt_for_crs(file_path, result)
+                if selected_crs is None:
+                    return
+                self._save_last_crs(selected_crs)
+
+            layer_groups = self._build_layers(file_path, result, crs=selected_crs)
             self._add_layer_groups_to_project(layer_groups)
+            if selected_crs is not None:
+                self._zoom_to_layer_groups(layer_groups)
 
             message = (
                 f"{len(result.entities)} nesne içe aktarıldı"
                 f" | ayrıştırıcı: {result.parser_backend}"
             )
+            if selected_crs is not None and selected_crs.isValid():
+                crs_label = format_crs_label(
+                    selected_crs.authid(),
+                    selected_crs.description(),
+                )
+                message += f" | CRS: {crs_label}"
             if result.attribute_tables:
                 attribute_row_count = sum(
                     len(table.rows)
@@ -137,13 +308,131 @@ class NCZReaderPlugin:
                 str(exc),
             )
 
-    def _build_layers(self, file_path, result):
+    def _resolve_initial_crs(self, detected_crs):
+        for candidate_code in detected_crs.candidate_epsgs:
+            candidate_crs = QgsCoordinateReferenceSystem(candidate_code)
+            if candidate_crs.isValid():
+                source_tag = (
+                    "MPROJ"
+                    if candidate_code == detected_crs.epsg and detected_crs.source == "MPROJ"
+                    else "TILED_XML"
+                )
+                return (
+                    candidate_crs,
+                    f"NCZ dosyasından algılandı ({source_tag})",
+                    candidate_code,
+                )
+
+        saved_value = QSettings().value(self.SETTINGS_LAST_CRS_KEY, "")
+        saved_text = str(saved_value).strip() if saved_value else ""
+        if saved_text:
+            saved_crs = QgsCoordinateReferenceSystem(saved_text)
+            if saved_crs.isValid():
+                return saved_crs, "Son seçilen koordinat sistemi", ""
+
+        project_crs = QgsProject.instance().crs()
+        if project_crs is not None and project_crs.isValid():
+            return project_crs, "Aktif QGIS proje koordinat sistemi", ""
+
+        return (
+            QgsCoordinateReferenceSystem("EPSG:4326"),
+            "Varsayılan koordinat sistemi",
+            "",
+        )
+
+    def _save_last_crs(self, crs):
+        if crs is None or not crs.isValid():
+            return
+        serialized = crs.authid() or crs.toWkt()
+        if serialized:
+            QSettings().setValue(self.SETTINGS_LAST_CRS_KEY, serialized)
+
+    def _prompt_for_crs(self, file_path, result):
+        detected_crs = detect_ncz_crs(result)
+        initial_crs, source_label, resolved_detected_epsg = self._resolve_initial_crs(
+            detected_crs
+        )
+        bounds = compute_entity_bounds(result.entities)
+        dialog = NCZCoordinateSystemDialog(
+            file_path=file_path,
+            detected_crs=detected_crs,
+            initial_crs=initial_crs,
+            initial_source_label=source_label,
+            resolved_detected_epsg=resolved_detected_epsg,
+            bounds=bounds,
+            parent=self.iface.mainWindow(),
+        )
+        if dialog.exec() != _DIALOG_ACCEPTED:
+            return None
+        selected_crs = dialog.selected_crs()
+        if selected_crs is None or not selected_crs.isValid():
+            return None
+        return selected_crs
+
+    def _zoom_to_layer_groups(self, layer_groups):
+        canvas = self.iface.mapCanvas() if hasattr(self.iface, "mapCanvas") else None
+        if canvas is None:
+            return
+
+        project = QgsProject.instance()
+        target_crs = canvas.mapSettings().destinationCrs()
+        if target_crs is None or not target_crs.isValid():
+            target_crs = project.crs()
+
+        combined_extent = None
+        for group in layer_groups:
+            for layer in group.layers:
+                if not layer.isSpatial() or layer.featureCount() == 0:
+                    continue
+                extent = layer.extent()
+                if extent is None or extent.isNull():
+                    continue
+                if (
+                    target_crs is not None
+                    and target_crs.isValid()
+                    and layer.crs().isValid()
+                    and layer.crs() != target_crs
+                ):
+                    try:
+                        transform = QgsCoordinateTransform(
+                            layer.crs(),
+                            target_crs,
+                            project,
+                        )
+                        extent = transform.transformBoundingBox(extent)
+                    except Exception:
+                        continue
+                if extent.isNull():
+                    continue
+                if combined_extent is None:
+                    combined_extent = QgsRectangle(extent)
+                else:
+                    combined_extent.combineExtentWith(extent)
+
+        if combined_extent is None or combined_extent.isNull():
+            return
+
+        if combined_extent.width() == 0 and combined_extent.height() == 0:
+            is_geographic = (
+                target_crs is not None
+                and target_crs.isValid()
+                and target_crs.isGeographic()
+            )
+            combined_extent.grow(0.001 if is_geographic else 50.0)
+        else:
+            combined_extent.scale(1.05)
+
+        canvas.setExtent(combined_extent)
+        canvas.refresh()
+
+    def _build_layers(self, file_path, result, crs=None):
         if not result.entities and not result.attribute_tables:
             raise ValueError("NCZ içinde okunabilir geometri veya öznitelik bulunamadı.")
 
         base_name = self._sanitize_name(os.path.splitext(os.path.basename(file_path))[0])
         source_file_name = os.path.splitext(os.path.basename(file_path))[0]
-        crs = QgsProject.instance().crs()
+        if crs is None:
+            crs = QgsProject.instance().crs()
         grouped_entities = {}
 
         for entity in result.entities:
@@ -248,8 +537,16 @@ class NCZReaderPlugin:
     def _create_layer(self, layer_name, geometry_type, entities, crs, source_file_name):
         uri = geometry_type
         if crs is not None and crs.isValid():
-            uri += f"?crs={crs.authid()}"
+            authid = crs.authid()
+            if authid:
+                uri += f"?crs={authid}"
+            else:
+                wkt = crs.toWkt()
+                if wkt:
+                    uri += f"?crs=wkt:{quote(wkt, safe='')}"
         layer = QgsVectorLayer(uri, layer_name, "memory")
+        if not layer.isValid():
+            layer = QgsVectorLayer(geometry_type, layer_name, "memory")
         provider = layer.dataProvider()
         provider.addAttributes(list(self.FIELD_DEFINITIONS))
         layer.updateFields()
